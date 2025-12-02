@@ -1,0 +1,10 @@
+# GUI 框架
+PyQt5>=5.15.0
+PyQt5-Qt5>=5.15.2
+PyQt5-sip>=12.8.1
+
+# Windows API 支持
+pywin32>=305
+
+# 全局热键
+keyboard>=0.13.5

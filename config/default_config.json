@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "display": {
+    "brightness": 100,
+    "contrast": 100,
+    "grayscale": 0,
+    "rgb": {
+      "red": 255,
+      "green": 255,
+      "blue": 255
+    }
+  },
+  "hotkeys": {
+    "increase_brightness": "ctrl+alt+up",
+    "decrease_brightness": "ctrl+alt+down",
+    "increase_contrast": "ctrl+alt+right",
+    "decrease_contrast": "ctrl+alt+left",
+    "reset": "ctrl+alt+r",
+    "toggle_window": "ctrl+alt+g"
+  },
+  "ui": {
+    "theme": "dark",
+    "window_opacity": 0.95,
+    "always_on_top": false,
+    "start_minimized": false
+  },
+  "system": {
+    "auto_start": false,
+    "minimize_to_tray": true,
+    "close_to_tray": true,
+    "restore_on_exit": true
+  },
+  "advanced": {
+    "adjustment_step": 5,
+    "smooth_transition": true,
+    "transition_duration": 200,
+    "debounce_delay": 100
+  }
+}
