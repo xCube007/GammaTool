@@ -10,14 +10,6 @@
       "blue": 255
     }
   },
-  "hotkeys": {
-    "increase_brightness": "ctrl+alt+up",
-    "decrease_brightness": "ctrl+alt+down",
-    "increase_contrast": "ctrl+alt+right",
-    "decrease_contrast": "ctrl+alt+left",
-    "reset": "ctrl+alt+r",
-    "toggle_window": "ctrl+alt+g"
-  },
   "ui": {
     "theme": "dark",
     "window_opacity": 0.95,
@@ -31,7 +23,6 @@
     "restore_on_exit": true
   },
   "advanced": {
-    "adjustment_step": 5,
     "smooth_transition": true,
     "transition_duration": 200,
     "debounce_delay": 100

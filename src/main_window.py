@@ -5,7 +5,8 @@
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QSlider, QSpinBox, QPushButton, QGroupBox
+    QLabel, QSlider, QSpinBox, QPushButton, QGroupBox, QMessageBox,
+    QComboBox, QInputDialog, QScrollArea, QFrame
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
@@ -20,7 +21,7 @@ class MainWindow(QMainWindow):
     # 自定义信号
     settings_changed = pyqtSignal()
     
-    def __init__(self, gamma_engine, config_manager, hotkey_manager):
+    def __init__(self, gamma_engine, config_manager, hotkey_manager, preset_manager=None):
         """
         初始化主窗口
         
@@ -28,11 +29,13 @@ class MainWindow(QMainWindow):
             gamma_engine: Gamma 引擎
             config_manager: 配置管理器
             hotkey_manager: 热键管理器
+            preset_manager: 预设管理器
         """
         super().__init__()
         self.gamma_engine = gamma_engine
         self.config_manager = config_manager
         self.hotkey_manager = hotkey_manager
+        self.preset_manager = preset_manager
         
         # 防抖定时器
         self._debounce_timer = QTimer()
@@ -41,12 +44,33 @@ class MainWindow(QMainWindow):
         
         self.setup_ui()
         self.load_settings()
+        
+        # 检查 Gamma Ramp 支持
+        if not self.gamma_engine.is_supported():
+            self._show_unsupported_warning()
+        
         logger.info("主窗口初始化完成")
+    
+    def _show_unsupported_warning(self):
+        """显示不支持警告"""
+        QMessageBox.warning(
+            self,
+            "功能受限",
+            "⚠️ 您的显卡驱动不支持 Gamma Ramp API\n\n"
+            "这是 Windows 10/11 和现代显卡驱动的常见限制。\n"
+            "程序界面可以正常使用,但无法实际调节屏幕亮度。\n\n"
+            "建议解决方案:\n"
+            "• 使用显卡控制面板(NVIDIA/AMD/Intel)调节\n"
+            "• 使用 Windows 夜间模式功能\n"
+            "• 使用显示器的物理按钮调节\n"
+            "• 尝试更新或回退显卡驱动\n\n"
+            "详细信息请查看日志文件。"
+        )
     
     def setup_ui(self):
         """设置用户界面"""
         self.setWindowTitle("GammaTool - 屏幕亮度调节工具")
-        self.setFixedSize(450, 550)
+        self.setFixedSize(450, 620)
         
         # 创建中心部件
         central_widget = QWidget()
@@ -55,6 +79,11 @@ class MainWindow(QMainWindow):
         # 主布局
         main_layout = QVBoxLayout()
         central_widget.setLayout(main_layout)
+        
+        # 预设管理组（如果有预设管理器）
+        if self.preset_manager:
+            preset_group = self.create_preset_group()
+            main_layout.addWidget(preset_group)
         
         # 基础调节组
         basic_group = self.create_basic_group()
@@ -72,6 +101,60 @@ class MainWindow(QMainWindow):
         main_layout.addStretch()
         
         logger.debug("UI 界面已设置")
+    
+    def create_preset_group(self):
+        """创建预设管理组"""
+        group = QGroupBox("配置预设")
+        layout = QVBoxLayout()
+        
+        # 当前预设标签
+        current_label = QLabel("当前预设: 无")
+        current_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.current_preset_label = current_label
+        layout.addWidget(current_label)
+        
+        # 预设按钮容器（使用滚动区域）
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(150)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        
+        preset_widget = QWidget()
+        self.preset_buttons_layout = QVBoxLayout()
+        self.preset_buttons_layout.setSpacing(5)
+        preset_widget.setLayout(self.preset_buttons_layout)
+        scroll_area.setWidget(preset_widget)
+        
+        layout.addWidget(scroll_area)
+        
+        # 存储预设按钮的字典
+        self.preset_buttons = {}
+        
+        # 创建预设按钮
+        self.update_preset_buttons()
+        
+        # 预设操作按钮行
+        button_row = QHBoxLayout()
+        
+        # 保存当前配置按钮
+        save_btn = QPushButton("💾 保存配置")
+        save_btn.clicked.connect(self.on_save_preset)
+        button_row.addWidget(save_btn)
+        
+        # 删除预设按钮
+        delete_btn = QPushButton("🗑️ 删除预设")
+        delete_btn.clicked.connect(self.on_delete_preset)
+        button_row.addWidget(delete_btn)
+        
+        # 设置快捷键按钮
+        hotkey_btn = QPushButton("⌨️ 设置快捷键")
+        hotkey_btn.clicked.connect(self.on_preset_hotkey_settings)
+        button_row.addWidget(hotkey_btn)
+        
+        layout.addLayout(button_row)
+        
+        group.setLayout(layout)
+        return group
     
     def create_basic_group(self):
         """创建基础调节组"""
@@ -168,10 +251,6 @@ class MainWindow(QMainWindow):
         """创建按钮布局"""
         layout = QHBoxLayout()
         
-        # 热键设置按钮
-        hotkey_btn = QPushButton("⚙️ 热键设置")
-        hotkey_btn.clicked.connect(self.on_hotkey_settings)
-        layout.addWidget(hotkey_btn)
         
         # 恢复默认按钮
         reset_btn = QPushButton("🔄 恢复默认")
@@ -215,20 +294,21 @@ class MainWindow(QMainWindow):
             self.gamma_engine.set_contrast(contrast)
             self.gamma_engine.set_grayscale(grayscale)
             self.gamma_engine.set_rgb(red, green, blue)
-            self.gamma_engine.apply_settings()
             
-            # 发送设置变更信号
-            self.settings_changed.emit()
+            success = self.gamma_engine.apply_settings()
             
-            logger.debug(f"设置已应用: 亮度={brightness}, 对比度={contrast}, "
-                        f"灰度={grayscale}, RGB=({red},{green},{blue})")
+            if success:
+                # 发送设置变更信号
+                self.settings_changed.emit()
+                logger.debug(f"设置已应用: 亮度={brightness}, 对比度={contrast}, "
+                            f"灰度={grayscale}, RGB=({red},{green},{blue})")
+            else:
+                if not self.gamma_engine.is_supported():
+                    logger.debug("设置未应用: Gamma Ramp API 不受支持")
+                    
         except Exception as e:
             logger.error(f"应用设置失败: {e}")
     
-    def on_hotkey_settings(self):
-        """热键设置按钮点击"""
-        # TODO: 实现热键设置对话框
-        logger.info("热键设置功能待实现")
     
     def on_reset(self):
         """恢复默认按钮点击"""
@@ -278,13 +358,209 @@ class MainWindow(QMainWindow):
         """
         self.brightness_slider.setValue(value)
     
+    def get_current_settings(self):
+        """
+        获取当前设置
+        
+        返回:
+            dict: 当前设置字典
+        """
+        return {
+            'brightness': self.brightness_slider.value(),
+            'contrast': self.contrast_slider.value(),
+            'grayscale': self.grayscale_slider.value(),
+            'rgb': {
+                'red': self.red_slider.value(),
+                'green': self.green_slider.value(),
+                'blue': self.blue_slider.value()
+            }
+        }
+    
+    def apply_settings(self, settings):
+        """
+        应用设置到界面
+        
+        参数:
+            settings: 设置字典
+        """
+        self.brightness_slider.setValue(settings.get('brightness', 100))
+        self.contrast_slider.setValue(settings.get('contrast', 100))
+        self.grayscale_slider.setValue(settings.get('grayscale', 0))
+        rgb = settings.get('rgb', {'red': 255, 'green': 255, 'blue': 255})
+        self.red_slider.setValue(rgb.get('red', 255))
+        self.green_slider.setValue(rgb.get('green', 255))
+        self.blue_slider.setValue(rgb.get('blue', 255))
+    
+    def update_preset_buttons(self):
+        """更新预设按钮列表"""
+        if not self.preset_manager:
+            return
+        
+        # 清除现有按钮
+        for button in self.preset_buttons.values():
+            button.deleteLater()
+        self.preset_buttons.clear()
+        
+        # 获取当前预设
+        current_preset = self.preset_manager.get_current_preset_name()
+        
+        # 为每个预设创建按钮
+        for preset_name in self.preset_manager.get_preset_names():
+            btn = QPushButton(preset_name)
+            btn.setMinimumHeight(35)
+            
+            # 获取快捷键
+            hotkey = self.preset_manager.get_preset_hotkey(preset_name)
+            if hotkey:
+                btn.setText(f"{preset_name} ({hotkey})")
+            
+            # 如果是当前预设，高亮显示
+            if preset_name == current_preset:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #2196F3;
+                        color: white;
+                        font-weight: bold;
+                        border: 2px solid #1976D2;
+                    }
+                    QPushButton:hover {
+                        background-color: #1976D2;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #f0f0f0;
+                        border: 1px solid #ccc;
+                    }
+                    QPushButton:hover {
+                        background-color: #e0e0e0;
+                    }
+                """)
+            
+            # 连接点击事件
+            btn.clicked.connect(lambda checked, name=preset_name: self.on_preset_button_clicked(name))
+            
+            self.preset_buttons_layout.addWidget(btn)
+            self.preset_buttons[preset_name] = btn
+        
+        # 更新当前预设标签
+        if current_preset:
+            self.current_preset_label.setText(f"当前预设: {current_preset}")
+        else:
+            self.current_preset_label.setText("当前预设: 无")
+    
+    def on_preset_button_clicked(self, preset_name):
+        """
+        预设按钮点击事件
+        
+        参数:
+            preset_name: 预设名称
+        """
+        if not preset_name or not self.preset_manager:
+            return
+        
+        try:
+            settings = self.preset_manager.load_preset(preset_name)
+            if settings:
+                self.apply_settings(settings)
+                self.update_preset_buttons()  # 更新按钮状态
+                logger.info(f"已切换到预设: {preset_name}")
+        except Exception as e:
+            logger.error(f"切换预设失败: {e}")
+            QMessageBox.warning(self, "错误", f"切换预设失败: {e}")
+    
+    def on_save_preset(self):
+        """保存当前配置为预设"""
+        if not self.preset_manager:
+            return
+        
+        try:
+            # 询问预设名称
+            name, ok = QInputDialog.getText(
+                self,
+                "保存配置",
+                "请输入预设名称:",
+                text=self.preset_manager.get_current_preset_name() or ""
+            )
+            
+            if ok and name:
+                settings = self.get_current_settings()
+                if self.preset_manager.save_preset(name, settings):
+                    # 更新预设按钮
+                    self.update_preset_buttons()
+                    QMessageBox.information(self, "成功", f"配置已保存为: {name}")
+                    logger.info(f"配置已保存为预设: {name}")
+                else:
+                    QMessageBox.warning(self, "错误", "保存配置失败")
+        except Exception as e:
+            logger.error(f"保存预设失败: {e}")
+            QMessageBox.warning(self, "错误", f"保存配置失败: {e}")
+    
+    def on_delete_preset(self):
+        """删除当前预设"""
+        if not self.preset_manager:
+            return
+        
+        try:
+            current_preset = self.preset_manager.get_current_preset_name()
+            if not current_preset:
+                QMessageBox.warning(self, "提示", "请先切换到要删除的预设")
+                return
+            
+            # 确认删除
+            reply = QMessageBox.question(
+                self,
+                "确认删除",
+                f"确定要删除预设 '{current_preset}' 吗？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                if self.preset_manager.delete_preset(current_preset):
+                    self.update_preset_buttons()
+                    QMessageBox.information(self, "成功", f"预设 '{current_preset}' 已删除")
+                    logger.info(f"预设已删除: {current_preset}")
+                else:
+                    QMessageBox.warning(self, "错误", "删除预设失败")
+        except Exception as e:
+            logger.error(f"删除预设失败: {e}")
+            QMessageBox.warning(self, "错误", f"删除预设失败: {e}")
+    
+    def on_preset_hotkey_settings(self):
+        """预设快捷键设置按钮点击"""
+        try:
+            from hotkey_dialog import PresetHotkeyDialog
+            dialog = PresetHotkeyDialog(self.preset_manager, self)
+            if dialog.exec_():
+                # 更新预设按钮显示
+                self.update_preset_buttons()
+                logger.info("预设快捷键设置已更新")
+        except Exception as e:
+            logger.error(f"打开预设快捷键设置对话框失败: {e}")
+            QMessageBox.warning(self, "错误", f"打开预设快捷键设置对话框失败: {e}")
+    
+    def switch_to_next_preset(self):
+        """切换到下一个预设"""
+        if not self.preset_manager:
+            return
+        
+        try:
+            settings = self.preset_manager.switch_to_next_preset()
+            if settings:
+                self.apply_settings(settings)
+                # 更新预设按钮状态
+                self.update_preset_buttons()
+                current_preset = self.preset_manager.get_current_preset_name()
+                logger.info(f"已切换到预设: {current_preset}")
+        except Exception as e:
+            logger.error(f"切换预设失败: {e}")
+    
     def closeEvent(self, event):
         """窗口关闭事件"""
-        # 如果配置为关闭到托盘，则隐藏窗口而不是关闭
-        if self.config_manager.get('system.close_to_tray', True):
-            event.ignore()
-            self.hide()
-            logger.debug("窗口已最小化到托盘")
-        else:
-            event.accept()
-            logger.info("窗口已关闭")
+        # 直接关闭应用程序，不再最小化到托盘
+        event.accept()
+        # 触发应用程序退出
+        from PyQt5.QtWidgets import QApplication
+        QApplication.instance().quit()
+        logger.info("窗口已关闭，应用程序退出")

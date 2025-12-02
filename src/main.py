@@ -12,6 +12,7 @@ from main_window import MainWindow
 from hotkey_manager import HotkeyManager
 from config_manager import ConfigManager
 from tray_icon import TrayIcon
+from preset_manager import PresetManager
 from utils import get_resource_path, setup_logging
 
 import logging
@@ -41,12 +42,14 @@ class GammaTool:
             self.config_manager = ConfigManager()
             self.gamma_engine = GammaEngine()
             self.hotkey_manager = HotkeyManager()
+            self.preset_manager = PresetManager()
             
             # 创建主窗口
             self.main_window = MainWindow(
                 self.gamma_engine,
                 self.config_manager,
-                self.hotkey_manager
+                self.hotkey_manager,
+                self.preset_manager
             )
             
             # 创建系统托盘
@@ -120,105 +123,63 @@ class GammaTool:
             logger.error(f"加载配置失败: {e}")
     
     def register_hotkeys(self):
-        """注册热键"""
+        """注册预设快捷键"""
         try:
-            hotkeys = self.config_manager.get('hotkeys', {})
-            adjustment_step = self.config_manager.get('advanced.adjustment_step', 5)
+            # 获取所有预设的快捷键
+            preset_hotkeys = self.preset_manager.get_all_hotkeys()
             
-            # 增加亮度
-            if 'increase_brightness' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['increase_brightness'],
-                    lambda: self.adjust_brightness(adjustment_step),
-                    "增加亮度"
-                )
-            
-            # 降低亮度
-            if 'decrease_brightness' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['decrease_brightness'],
-                    lambda: self.adjust_brightness(-adjustment_step),
-                    "降低亮度"
-                )
-            
-            # 增加对比度
-            if 'increase_contrast' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['increase_contrast'],
-                    lambda: self.adjust_contrast(adjustment_step),
-                    "增加对比度"
-                )
-            
-            # 降低对比度
-            if 'decrease_contrast' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['decrease_contrast'],
-                    lambda: self.adjust_contrast(-adjustment_step),
-                    "降低对比度"
-                )
-            
-            # 恢复默认
-            if 'reset' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['reset'],
-                    self.reset_settings,
-                    "恢复默认"
-                )
-            
-            # 显示/隐藏窗口
-            if 'toggle_window' in hotkeys:
-                self.hotkey_manager.register_hotkey(
-                    hotkeys['toggle_window'],
-                    self.toggle_main_window,
-                    "显示/隐藏窗口"
-                )
+            # 为每个预设注册快捷键
+            for preset_name, hotkey in preset_hotkeys.items():
+                if hotkey:
+                    # 使用闭包捕获预设名称
+                    self.hotkey_manager.register_hotkey(
+                        hotkey,
+                        lambda name=preset_name: self.switch_to_preset(name),
+                        f"切换到预设: {preset_name}"
+                    )
             
             self.hotkey_manager.start_listening()
-            logger.info("热键已注册")
+            
+            if preset_hotkeys:
+                logger.info(f"已注册 {len(preset_hotkeys)} 个预设快捷键")
+            else:
+                logger.info("未设置预设快捷键")
             
         except Exception as e:
-            logger.error(f"注册热键失败: {e}")
+            logger.error(f"注册预设快捷键失败: {e}")
     
-    def adjust_brightness(self, delta):
+    def switch_to_preset(self, preset_name):
         """
-        调节亮度
+        切换到指定预设
         
         参数:
-            delta: 变化量
+            preset_name: 预设名称
         """
         try:
-            current = self.gamma_engine.current_brightness
-            new_value = max(0, min(200, current + delta))
-            self.gamma_engine.set_brightness(new_value)
-            self.gamma_engine.apply_settings()
-            self.main_window.update_brightness_slider(new_value)
-            
-            # 保存配置
-            self.config_manager.set('display.brightness', new_value)
-            
-            logger.debug(f"亮度已调节: {current} -> {new_value}")
+            settings = self.preset_manager.load_preset(preset_name)
+            if settings:
+                # 应用设置到引擎
+                self.gamma_engine.set_brightness(settings.get('brightness', 100))
+                self.gamma_engine.set_contrast(settings.get('contrast', 100))
+                self.gamma_engine.set_grayscale(settings.get('grayscale', 0))
+                rgb = settings.get('rgb', {'red': 255, 'green': 255, 'blue': 255})
+                self.gamma_engine.set_rgb(rgb['red'], rgb['green'], rgb['blue'])
+                self.gamma_engine.apply_settings()
+                
+                # 更新主窗口
+                self.main_window.apply_settings(settings)
+                self.main_window.update_preset_buttons()
+                
+                # 显示通知
+                self.tray_icon.show_message(
+                    "GammaTool",
+                    f"已切换到预设: {preset_name}",
+                    duration=1500
+                )
+                
+                logger.info(f"通过快捷键切换到预设: {preset_name}")
         except Exception as e:
-            logger.error(f"调节亮度失败: {e}")
-    
-    def adjust_contrast(self, delta):
-        """
-        调节对比度
-        
-        参数:
-            delta: 变化量
-        """
-        try:
-            current = self.gamma_engine.current_contrast
-            new_value = max(0, min(200, current + delta))
-            self.gamma_engine.set_contrast(new_value)
-            self.gamma_engine.apply_settings()
-            
-            # 保存配置
-            self.config_manager.set('display.contrast', new_value)
-            
-            logger.debug(f"对比度已调节: {current} -> {new_value}")
-        except Exception as e:
-            logger.error(f"调节对比度失败: {e}")
+            logger.error(f"切换到预设失败 [{preset_name}]: {e}")
     
     def set_brightness(self, value):
         """
@@ -280,6 +241,7 @@ class GammaTool:
             logger.debug("主窗口已隐藏")
         else:
             self.show_main_window()
+    
     
     def quit_application(self):
         """退出应用程序"""

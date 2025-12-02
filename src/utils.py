@@ -107,7 +107,7 @@ def setup_logging(log_dir: Path = None, log_level=logging.INFO):
     
     # 创建日志记录器
     logger = logging.getLogger('GammaTool')
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)  # 设置为 DEBUG 级别以显示所有日志
     
     # 清除现有的处理器
     logger.handlers.clear()
@@ -119,11 +119,11 @@ def setup_logging(log_dir: Path = None, log_level=logging.INFO):
         backupCount=3,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.DEBUG)  # 文件记录所有 DEBUG 级别日志
     
     # 控制台处理器
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(logging.INFO)  # 控制台只显示 INFO 及以上级别
     
     # 格式化器
     formatter = logging.Formatter(

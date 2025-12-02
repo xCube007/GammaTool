@@ -4,10 +4,18 @@ Gamma 调节引擎
 """
 
 import ctypes
-from ctypes import windll, byref, Structure, c_ushort
+from ctypes import windll, byref, Structure, c_ushort, c_void_p, POINTER
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('GammaTool')
+
+# 尝试导入 WMI 用于备用方案
+try:
+    import wmi
+    WMI_AVAILABLE = True
+except ImportError:
+    WMI_AVAILABLE = False
+    logger.warning("WMI 模块未安装,某些功能可能受限")
 
 
 class RAMP(Structure):
@@ -29,22 +37,140 @@ class GammaEngine:
         self.current_grayscale = 0
         self.current_rgb = {'red': 255, 'green': 255, 'blue': 255}
         self._default_ramp = None
-        self._save_default_ramp()
-        logger.info("Gamma 引擎初始化完成")
+        self._gamma_ramp_supported = False
+        self._primary_device_name = None  # 存储支持 Gamma Ramp 的设备名称
+        self._check_gamma_ramp_support()
+        
+        if self._gamma_ramp_supported:
+            self._save_default_ramp()
+            logger.info("Gamma 引擎初始化完成 (使用 Gamma Ramp API)")
+        else:
+            logger.warning("=" * 60)
+            logger.warning("您的显卡驱动不支持 Gamma Ramp API")
+            logger.warning("这是 Windows 10/11 和现代显卡驱动的常见限制")
+            logger.warning("建议解决方案:")
+            logger.warning("1. 使用显卡控制面板调节亮度/对比度")
+            logger.warning("2. 使用 Windows 夜间模式功能")
+            logger.warning("3. 尝试更新或回退显卡驱动")
+            logger.warning("4. 使用外部显示器调节按钮")
+            logger.warning("=" * 60)
+    
+    def _check_gamma_ramp_support(self):
+        """检查系统是否支持 Gamma Ramp API"""
+        try:
+            # 获取主显示器的设备上下文
+            hdc = windll.user32.GetDC(None)
+            
+            if not hdc:
+                error_code = ctypes.get_last_error()
+                logger.error(f"无法获取主显示器设备上下文 (错误码: {error_code})")
+                return
+            
+            # 尝试获取当前 Gamma Ramp
+            ramp = RAMP()
+            success = windll.gdi32.GetDeviceGammaRamp(hdc, byref(ramp))
+            windll.user32.ReleaseDC(None, hdc)
+            
+            # 如果主显示器不支持，尝试枚举所有显示器设备
+            if not success:
+                logger.info("主显示器不支持 Gamma Ramp，正在检测其他显示设备...")
+                self._enumerate_display_devices()
+            else:
+                self._gamma_ramp_supported = True
+                logger.info("✓ 系统支持 Gamma Ramp API")
+                
+        except Exception as e:
+            logger.error(f"检查 Gamma Ramp 支持时出错: {e}", exc_info=True)
+    
+    def _enumerate_display_devices(self):
+        """枚举所有显示设备"""
+        try:
+            import ctypes.wintypes as wintypes
+            
+            # 定义 DISPLAY_DEVICE 结构
+            class DISPLAY_DEVICE(ctypes.Structure):
+                _fields_ = [
+                    ('cb', wintypes.DWORD),
+                    ('DeviceName', wintypes.WCHAR * 32),
+                    ('DeviceString', wintypes.WCHAR * 128),
+                    ('StateFlags', wintypes.DWORD),
+                    ('DeviceID', wintypes.WCHAR * 128),
+                    ('DeviceKey', wintypes.WCHAR * 128)
+                ]
+            
+            device = DISPLAY_DEVICE()
+            device.cb = ctypes.sizeof(device)
+            
+            i = 0
+            i = 0
+            while windll.user32.EnumDisplayDevicesW(None, i, ctypes.byref(device), 0):
+                # 检查是否为已连接的显示器
+                DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001
+                is_attached = device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP
+                
+                # 尝试为此设备创建 DC 并测试 Gamma Ramp
+                if is_attached:
+                    self._test_device_gamma_support(device.DeviceName, device.DeviceString)
+                
+                i += 1
+                device = DISPLAY_DEVICE()
+                device.cb = ctypes.sizeof(device)
+        except Exception as e:
+            logger.error(f"枚举显示设备失败: {e}", exc_info=True)
+    
+    def _test_device_gamma_support(self, device_name, device_desc):
+        """测试特定设备的 Gamma Ramp 支持"""
+        try:
+            # 为特定设备创建 DC (CreateDC 在 gdi32 中，不是 user32)
+            hdc = windll.gdi32.CreateDCW("DISPLAY", device_name, None, None)
+            
+            if not hdc:
+                return
+            
+            # 测试 Gamma Ramp
+            ramp = RAMP()
+            success = windll.gdi32.GetDeviceGammaRamp(hdc, byref(ramp))
+            
+            if success:
+                # 如果找到支持的设备，更新标志
+                if not self._gamma_ramp_supported:
+                    self._gamma_ramp_supported = True
+                    self._primary_device_name = device_name
+                    logger.info(f"✓ 找到支持的显示设备: {device_desc} ({device_name})")
+            
+            windll.gdi32.DeleteDC(hdc)
+            
+        except Exception as e:
+            logger.debug(f"测试设备 {device_name} 失败: {e}")
     
     def _save_default_ramp(self):
         """保存默认 Gamma 值"""
         try:
-            hdc = windll.user32.GetDC(None)
+            # 如果找到了支持的特定设备，使用该设备
+            if self._primary_device_name:
+                hdc = windll.gdi32.CreateDCW("DISPLAY", self._primary_device_name, None, None)
+            else:
+                hdc = windll.user32.GetDC(None)
+            
             if hdc:
                 ramp = RAMP()
                 success = windll.gdi32.GetDeviceGammaRamp(hdc, byref(ramp))
+                
                 if success:
                     self._default_ramp = ramp
                     logger.info("默认 Gamma 值已保存")
                 else:
-                    logger.warning("无法获取默认 Gamma 值")
-                windll.user32.ReleaseDC(None, hdc)
+                    error_code = ctypes.get_last_error()
+                    logger.error(f"无法获取默认 Gamma 值 (错误码: {error_code})")
+                
+                # 释放设备上下文
+                if self._primary_device_name:
+                    windll.gdi32.DeleteDC(hdc)
+                else:
+                    windll.user32.ReleaseDC(None, hdc)
+            else:
+                error_code = ctypes.get_last_error()
+                logger.error(f"获取设备上下文失败 (错误码: {error_code})")
         except Exception as e:
             logger.error(f"保存默认 Gamma 值失败: {e}")
     
@@ -112,12 +238,30 @@ class GammaEngine:
             bool: 是否成功
         """
         try:
-            hdc = windll.user32.GetDC(None)
+            # 如果找到了支持的特定设备，使用该设备
+            if self._primary_device_name:
+                hdc = windll.gdi32.CreateDCW("DISPLAY", self._primary_device_name, None, None)
+            else:
+                hdc = windll.user32.GetDC(None)
+            
             if hdc:
                 success = windll.gdi32.SetDeviceGammaRamp(hdc, byref(ramp))
-                windll.user32.ReleaseDC(None, hdc)
+                
+                if not success:
+                    error_code = ctypes.get_last_error()
+                    logger.error(f"SetDeviceGammaRamp 失败 (错误码: {error_code})")
+                
+                # 释放设备上下文
+                if self._primary_device_name:
+                    windll.gdi32.DeleteDC(hdc)
+                else:
+                    windll.user32.ReleaseDC(None, hdc)
+                    
                 return bool(success)
-            return False
+            else:
+                error_code = ctypes.get_last_error()
+                logger.error(f"获取设备上下文失败 (错误码: {error_code})")
+                return False
         except Exception as e:
             logger.error(f"应用 Gamma 值失败: {e}")
             return False
@@ -175,6 +319,10 @@ class GammaEngine:
         返回:
             bool: 是否成功
         """
+        if not self._gamma_ramp_supported:
+            logger.warning("无法应用设置: 系统不支持 Gamma Ramp API")
+            return False
+        
         ramp = self._calculate_gamma_ramp(
             self.current_brightness,
             self.current_contrast,
@@ -191,6 +339,15 @@ class GammaEngine:
             logger.error("应用 Gamma 设置失败")
         return success
     
+    def is_supported(self):
+        """
+        检查 Gamma Ramp API 是否被支持
+        
+        返回:
+            bool: 是否支持
+        """
+        return self._gamma_ramp_supported
+    
     def reset_to_default(self):
         """
         恢复默认设置
@@ -198,6 +355,15 @@ class GammaEngine:
         返回:
             bool: 是否成功
         """
+        if not self._gamma_ramp_supported:
+            logger.warning("无法恢复默认设置: 系统不支持 Gamma Ramp API")
+            # 重置内部状态
+            self.current_brightness = 100
+            self.current_contrast = 100
+            self.current_grayscale = 0
+            self.current_rgb = {'red': 255, 'green': 255, 'blue': 255}
+            return False
+            
         if self._default_ramp:
             success = self._apply_gamma_ramp(self._default_ramp)
             if success:
