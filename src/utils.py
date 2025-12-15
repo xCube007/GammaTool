@@ -14,17 +14,19 @@ from logging.handlers import RotatingFileHandler
 def get_resource_path(relative_path):
     """
     获取资源文件路径（支持打包后的路径）
-    
+
     参数:
         relative_path: 相对路径
-    
+
     返回:
         str: 资源文件的绝对路径
     """
     if hasattr(sys, '_MEIPASS'):
         # PyInstaller 打包后的临时目录
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    # 使用脚本所在目录的上一级目录作为基础路径
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
 
 
 def set_auto_start(enable: bool, app_name: str = "GammaTool", app_path: str = None):

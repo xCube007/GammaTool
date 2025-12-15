@@ -13,14 +13,18 @@ logger = logging.getLogger(__name__)
 
 class PresetManager:
     """配置预设管理器"""
-    
-    def __init__(self, presets_file: str = "config/presets.json"):
+
+    def __init__(self, presets_file: str = None):
         """
         初始化预设管理器
-        
+
         参数:
-            presets_file: 预设文件路径
+            presets_file: 预设文件路径，如果为 None 则使用默认路径
         """
+        if presets_file is None:
+            # 使用脚本所在目录的上一级目录下的 config 目录
+            base_path = Path(__file__).parent.parent
+            presets_file = base_path / "config" / "presets.json"
         self.presets_file = Path(presets_file)
         self.presets: Dict[str, Dict] = {}
         self.current_preset: Optional[str] = None

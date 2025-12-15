@@ -193,46 +193,46 @@ class PresetHotkeyDialog(QDialog):
             logger.error(f"加载预设快捷键配置失败: {e}")
     
     def save_hotkeys(self):
-        def save_hotkeys(self):
-            """保存预设快捷键配置"""
-            try:
-                # 检查是否有重复的快捷键
-                hotkey_map = {}
-                for preset_name, input_field in self.hotkey_inputs.items():
-                    hotkey_text = input_field.text().strip()
-                    if hotkey_text and hotkey_text != "按下热键组合..." and hotkey_text != "请使用修饰键组合":
-                        if hotkey_text in hotkey_map:
-                            QMessageBox.warning(
-                                self,
-                                "快捷键冲突",
-                                f"快捷键 '{hotkey_text}' 被多个预设使用：\n"
-                                f"- {hotkey_map[hotkey_text]}\n"
-                                f"- {preset_name}\n\n"
-                                f"请为每个预设设置不同的快捷键。"
-                            )
-                            return
-                        hotkey_map[hotkey_text] = preset_name
-                
-                # 保存到预设管理器
-                for preset_name, input_field in self.hotkey_inputs.items():
-                    hotkey_text = input_field.text().strip()
-                    if hotkey_text and hotkey_text != "按下热键组合..." and hotkey_text != "请使用修饰键组合":
-                        self.preset_manager.set_preset_hotkey(preset_name, hotkey_text)
-                    else:
-                        self.preset_manager.set_preset_hotkey(preset_name, "")
-                
-                QMessageBox.information(
-                    self,
-                    "成功",
-                    "预设快捷键配置已保存！\n\n请重启程序以使新快捷键生效。"
-                )
-                
-                logger.info("预设快捷键配置已保存")
-                self.accept()
-                
-            except Exception as e:
-                logger.error(f"保存预设快捷键配置失败: {e}")
-                QMessageBox.warning(self, "错误", f"保存预设快捷键配置失败: {e}")
+        """保存预设快捷键配置"""
+        try:
+            # 检查是否有重复的快捷键
+            hotkey_map = {}
+            for preset_name, input_field in self.hotkey_inputs.items():
+                hotkey_text = input_field.text().strip()
+                if hotkey_text and hotkey_text != "按下热键组合..." and hotkey_text != "请使用修饰键组合":
+                    if hotkey_text in hotkey_map:
+                        QMessageBox.warning(
+                            self,
+                            "快捷键冲突",
+                            f"快捷键 '{hotkey_text}' 被多个预设使用：\n"
+                            f"- {hotkey_map[hotkey_text]}\n"
+                            f"- {preset_name}\n\n"
+                            f"请为每个预设设置不同的快捷键。"
+                        )
+                        return
+                    hotkey_map[hotkey_text] = preset_name
+
+            # 保存到预设管理器
+            for preset_name, input_field in self.hotkey_inputs.items():
+                hotkey_text = input_field.text().strip()
+                if hotkey_text and hotkey_text != "按下热键组合..." and hotkey_text != "请使用修饰键组合":
+                    self.preset_manager.set_preset_hotkey(preset_name, hotkey_text)
+                else:
+                    self.preset_manager.set_preset_hotkey(preset_name, "")
+
+            QMessageBox.information(
+                self,
+                "成功",
+                "预设快捷键配置已保存！\n\n请重启程序以使新快捷键生效。"
+            )
+
+            logger.info("预设快捷键配置已保存")
+            self.accept()
+
+        except Exception as e:
+            logger.error(f"保存预设快捷键配置失败: {e}")
+            QMessageBox.warning(self, "错误", f"保存预设快捷键配置失败: {e}")
+
     def reset_to_default(self):
         """清除所有快捷键"""
         try:
