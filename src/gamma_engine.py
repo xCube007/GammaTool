@@ -102,7 +102,6 @@ class GammaEngine:
             device.cb = ctypes.sizeof(device)
             
             i = 0
-            i = 0
             while windll.user32.EnumDisplayDevicesW(None, i, ctypes.byref(device), 0):
                 # 检查是否为已连接的显示器
                 DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001

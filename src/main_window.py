@@ -558,9 +558,13 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """窗口关闭事件"""
-        # 直接关闭应用程序，不再最小化到托盘
-        event.accept()
-        # 触发应用程序退出
-        from PyQt5.QtWidgets import QApplication
-        QApplication.instance().quit()
-        logger.info("窗口已关闭，应用程序退出")
+        # 根据配置决定是关闭还是最小化到托盘
+        if self.config_manager.get('system.close_to_tray', True):
+            event.ignore()
+            self.hide()
+            logger.info("窗口已最小化到托盘")
+        else:
+            event.accept()
+            from PyQt5.QtWidgets import QApplication
+            QApplication.instance().quit()
+            logger.info("窗口已关闭，应用程序退出")
